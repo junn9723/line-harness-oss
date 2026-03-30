@@ -184,6 +184,9 @@ async function scheduled(
   await Promise.allSettled(jobs);
 }
 
+// Export app instance for Node.js entry point
+export { app, scheduled };
+
 export default {
   fetch: app.fetch,
   scheduled,

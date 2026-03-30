@@ -29,6 +29,55 @@ interface D1PreparedStatement {
   run(): Promise<D1Result>;
 }
 
+function createStatement(sqlite: BetterSqlite3.Database, query: string, boundValues: unknown[]): D1PreparedStatement {
+  const stmt: D1PreparedStatement = {
+    bind(...values: unknown[]): D1PreparedStatement {
+      // Return a NEW statement with captured values to avoid race conditions
+      return createStatement(sqlite, query, values);
+    },
+
+    async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
+      const start = performance.now();
+      const prepared = sqlite.prepare(query);
+      const results = prepared.all(...boundValues) as T[];
+      return {
+        results,
+        success: true,
+        meta: {
+          duration: performance.now() - start,
+          changes: 0,
+          last_row_id: 0,
+        },
+      };
+    },
+
+    async first<T = Record<string, unknown>>(colName?: string): Promise<T | null> {
+      const prepared = sqlite.prepare(query);
+      const row = prepared.get(...boundValues) as Record<string, unknown> | undefined;
+      if (!row) return null;
+      if (colName) return (row[colName] as T) ?? null;
+      return row as T;
+    },
+
+    async run(): Promise<D1Result> {
+      const start = performance.now();
+      const prepared = sqlite.prepare(query);
+      const info = prepared.run(...boundValues);
+      return {
+        results: [],
+        success: true,
+        meta: {
+          duration: performance.now() - start,
+          changes: info.changes,
+          last_row_id: Number(info.lastInsertRowid),
+        },
+      };
+    },
+  };
+
+  return stmt;
+}
+
 /**
  * Create a D1Database-compatible wrapper around a better-sqlite3 instance.
  */
@@ -39,68 +88,7 @@ export function createD1Shim(sqlite: BetterSqlite3.Database): D1Database {
 
   const shim = {
     prepare(query: string): D1PreparedStatement {
-      let boundValues: unknown[] = [];
-
-      const stmt: D1PreparedStatement = {
-        bind(...values: unknown[]): D1PreparedStatement {
-          boundValues = values;
-          return stmt;
-        },
-
-        async all<T = Record<string, unknown>>(): Promise<D1Result<T>> {
-          const start = performance.now();
-          const prepared = sqlite.prepare(query);
-          const results = prepared.all(...boundValues) as T[];
-          return {
-            results,
-            success: true,
-            meta: {
-              duration: performance.now() - start,
-              changes: 0,
-              last_row_id: 0,
-            },
-          };
-        },
-
-        async first<T = Record<string, unknown>>(colName?: string): Promise<T | null> {
-          const prepared = sqlite.prepare(query);
-          const row = prepared.get(...boundValues) as Record<string, unknown> | undefined;
-          if (!row) return null;
-          if (colName) return (row[colName] as T) ?? null;
-          return row as T;
-        },
-
-        async run(): Promise<D1Result> {
-          const start = performance.now();
-          const prepared = sqlite.prepare(query);
-          const info = prepared.run(...boundValues);
-          return {
-            results: [],
-            success: true,
-            meta: {
-              duration: performance.now() - start,
-              changes: info.changes,
-              last_row_id: Number(info.lastInsertRowid),
-            },
-          };
-        },
-      };
-
-      return stmt;
-    },
-
-    // D1 batch API — not currently used but provided for completeness
-    async batch<T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> {
-      const results: D1Result<T>[] = [];
-      const transaction = sqlite.transaction(() => {
-        for (const s of statements) {
-          // Each statement in batch calls run()
-          // We synchronously handle this inside the transaction
-          results.push({ results: [] as T[], success: true, meta: { duration: 0, changes: 0, last_row_id: 0 } });
-        }
-      });
-      transaction();
-      return results;
+      return createStatement(sqlite, query, []);
     },
 
     // exec: run raw SQL (used for migrations)

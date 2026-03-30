@@ -10,7 +10,7 @@
 
 import { serve } from '@hono/node-server';
 import Database from 'better-sqlite3';
-import { schedule } from 'node-cron';
+import { schedule, type ScheduledTask } from 'node-cron';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,17 +45,33 @@ console.log(`[db] Opening SQLite database at ${resolve(DB_PATH)}`);
 const sqlite = new Database(DB_PATH);
 const db = createD1Shim(sqlite);
 
-// Run migrations if schema.sql exists
-const schemaPath = resolve(__dirname, '../../../packages/db/schema.sql');
-const altSchemaPath = resolve(__dirname, '../../packages/db/schema.sql');
-const schemaPaths = [schemaPath, altSchemaPath, './packages/db/schema.sql', '/app/packages/db/schema.sql'];
-for (const p of schemaPaths) {
+// Run migrations — fail fast if schema not found or invalid
+const schemaCandidates = [
+  resolve(__dirname, '../../../packages/db/schema.sql'),
+  resolve(__dirname, '../../packages/db/schema.sql'),
+  './packages/db/schema.sql',
+  '/app/packages/db/schema.sql',
+];
+
+let schemaApplied = false;
+for (const p of schemaCandidates) {
   if (existsSync(p)) {
     console.log(`[db] Applying schema from ${p}`);
-    const schema = readFileSync(p, 'utf-8');
-    sqlite.exec(schema);
+    try {
+      const schema = readFileSync(p, 'utf-8');
+      sqlite.exec(schema);
+      console.log('[db] Schema applied successfully');
+      schemaApplied = true;
+    } catch (err) {
+      console.error(`[db] FATAL: Failed to apply schema from ${p}:`, err);
+      process.exit(1);
+    }
     break;
   }
+}
+if (!schemaApplied) {
+  console.error('[db] FATAL: schema.sql not found in any of:', schemaCandidates);
+  process.exit(1);
 }
 
 // ---------------------------------------------------------------------------
@@ -72,8 +88,8 @@ const storage = createFileStorage(STORAGE_PATH);
 function requireEnv(key: string): string {
   const val = process.env[key];
   if (!val) {
-    console.warn(`[env] WARNING: ${key} is not set`);
-    return '';
+    console.error(`[env] FATAL: Required environment variable ${key} is not set`);
+    process.exit(1);
   }
   return val;
 }
@@ -98,7 +114,7 @@ const env: Env['Bindings'] = {
 
 console.log(`[server] Starting LINE Harness on port ${PORT}`);
 
-serve({
+const server = serve({
   fetch: (request) => app.fetch(request, env),
   port: PORT,
 });
@@ -111,7 +127,7 @@ console.log(`[server] LINE Harness is running at http://localhost:${PORT}`);
 
 console.log(`[cron] Scheduling jobs with pattern: ${CRON_SCHEDULE}`);
 
-schedule(CRON_SCHEDULE, async () => {
+const cronTask: ScheduledTask = schedule(CRON_SCHEDULE, async () => {
   const start = Date.now();
   console.log(`[cron] Running scheduled tasks...`);
   try {
@@ -133,9 +149,36 @@ schedule(CRON_SCHEDULE, async () => {
 // Graceful shutdown
 // ---------------------------------------------------------------------------
 
+let shuttingDown = false;
+
 function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+
   console.log('[server] Shutting down...');
-  sqlite.close();
+
+  // Stop accepting new cron tasks
+  cronTask.stop();
+
+  // Close HTTP server
+  server.close(() => {
+    console.log('[server] HTTP server closed');
+  });
+
+  // Close database
+  try {
+    sqlite.close();
+    console.log('[server] Database closed');
+  } catch (err) {
+    console.error('[server] Error closing database:', err);
+  }
+
+  // Force exit after timeout if graceful shutdown hangs
+  setTimeout(() => {
+    console.error('[server] Forced shutdown after 10s timeout');
+    process.exit(1);
+  }, 10_000).unref();
+
   process.exit(0);
 }
 

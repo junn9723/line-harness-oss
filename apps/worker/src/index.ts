@@ -136,6 +136,9 @@ h1{font-size:28px;font-weight:800;margin-bottom:8px}
 </html>`);
 });
 
+// Simple health check (no auth required, used by Docker healthcheck)
+app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
+
 // Convenience redirect for /book path
 app.get('/book', (c) => c.redirect('/?page=book'));
 

@@ -6,7 +6,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 
 interface R2ObjectHttpMetadata {
@@ -47,11 +47,25 @@ export function createFileStorage(baseDir: string): R2Bucket {
     mkdirSync(metaDir, { recursive: true });
   }
 
+  function validateKey(key: string): void {
+    if (key.includes('..') || key.includes('\0')) {
+      throw new Error(`Invalid storage key: ${key}`);
+    }
+    // Ensure resolved path stays within baseDir
+    const resolved = resolve(baseDir, key);
+    const rel = relative(baseDir, resolved);
+    if (rel.startsWith('..') || resolve(rel) !== resolved.slice(resolve(baseDir).length + 1) && rel.includes('..')) {
+      throw new Error(`Invalid storage key: ${key}`);
+    }
+  }
+
   function filePath(key: string): string {
+    validateKey(key);
     return join(baseDir, key);
   }
 
   function metaPath(key: string): string {
+    validateKey(key);
     return join(metaDir, `${key}.json`);
   }
 
@@ -112,8 +126,8 @@ export function createFileStorage(baseDir: string): R2Bucket {
       if (existsSync(mp)) {
         try {
           meta = JSON.parse(readFileSync(mp, 'utf-8'));
-        } catch {
-          // ignore corrupted metadata
+        } catch (err) {
+          console.warn(`[storage] Corrupted metadata file ${mp}, using defaults:`, err);
         }
       }
 

@@ -74,19 +74,23 @@ images.post('/api/images', async (c) => {
 
 // GET /images/:key — serve image (public, no auth)
 images.get('/images/:key', async (c) => {
-  const key = c.req.param('key');
-  const object = await c.env.IMAGES.get(key);
+  try {
+    const key = c.req.param('key');
+    const object = await c.env.IMAGES.get(key);
 
-  if (!object) {
+    if (!object) {
+      return c.json({ success: false, error: 'Image not found' }, 404);
+    }
+
+    const headers = new Headers();
+    headers.set('Content-Type', object.httpMetadata?.contentType || 'image/png');
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    headers.set('ETag', object.etag);
+
+    return new Response(object.body, { headers });
+  } catch {
     return c.json({ success: false, error: 'Image not found' }, 404);
   }
-
-  const headers = new Headers();
-  headers.set('Content-Type', object.httpMetadata?.contentType || 'image/png');
-  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
-  headers.set('ETag', object.etag);
-
-  return new Response(object.body, { headers });
 });
 
 // DELETE /api/images/:key — delete image

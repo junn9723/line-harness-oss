@@ -9,7 +9,7 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   // Bundle workspace packages into the output, but keep native/node modules external
-  noExternal: [/@line-crm\/.*/, /^hono/],
+  noExternal: [/@line-crm\/.*/, /^hono/, /^@hono\/.*/],
   external: ['better-sqlite3', 'node-cron'],
   banner: {
     js: `

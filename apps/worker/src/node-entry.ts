@@ -9,6 +9,7 @@
  */
 
 import { serve } from '@hono/node-server';
+import { serveStatic } from '@hono/node-server/serve-static';
 import Database from 'better-sqlite3';
 import { schedule, type ScheduledTask } from 'node-cron';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -107,6 +108,37 @@ const env: Env['Bindings'] = {
   WORKER_URL: process.env.WORKER_URL || `http://localhost:${PORT}`,
   X_HARNESS_URL: process.env.X_HARNESS_URL,
 };
+
+// ---------------------------------------------------------------------------
+// Static file serving for admin dashboard (Docker/VPS only)
+// ---------------------------------------------------------------------------
+
+const adminDir = resolve(process.cwd(), 'public/admin');
+if (existsSync(adminDir)) {
+  console.log(`[static] Serving admin dashboard from ${adminDir}`);
+
+  // Rewrite /admin/login → /admin/login.html when the .html file exists
+  app.use('/admin/*', async (c, next) => {
+    const path = new URL(c.req.url).pathname;
+    // Skip files that already have an extension (e.g. .js, .css, .png)
+    if (path !== '/admin' && path !== '/admin/' && !path.includes('.')) {
+      const htmlPath = resolve(process.cwd(), 'public', path.slice(1) + '.html');
+      if (existsSync(htmlPath)) {
+        return c.newResponse(readFileSync(htmlPath), 200, {
+          'Content-Type': 'text/html; charset=utf-8',
+        });
+      }
+    }
+    await next();
+  });
+
+  // Serve static files under /admin/* (JS, CSS, images, etc.)
+  app.use('/admin/*', serveStatic({ root: './public/' }));
+  // Fallback: serve index.html for unmatched /admin routes
+  app.get('/admin/*', serveStatic({ root: './public/', path: 'admin/index.html' }));
+  // Redirect / to /admin/ for convenience
+  app.get('/', (c) => c.redirect('/admin/'));
+}
 
 // ---------------------------------------------------------------------------
 // HTTP Server

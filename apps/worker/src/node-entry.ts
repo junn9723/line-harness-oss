@@ -136,7 +136,7 @@ const cronTask: ScheduledTask = schedule(CRON_SCHEDULE, async () => {
     const ctx = {
       waitUntil: (p: Promise<unknown>) => p.catch((e) => console.error('[cron] waitUntil error:', e)),
       passThroughOnException: () => {},
-    } as ExecutionContext;
+    } as unknown as ExecutionContext;
 
     await scheduled(event, env, ctx);
     console.log(`[cron] Scheduled tasks completed in ${Date.now() - start}ms`);

@@ -14,7 +14,7 @@
  *   // db is now usable wherever D1Database is expected
  */
 
-import type BetterSqlite3 from 'better-sqlite3';
+import type BetterSqlite3Database from 'better-sqlite3';
 
 interface D1Result<T = unknown> {
   results: T[];
@@ -81,7 +81,7 @@ function createStatement(sqlite: BetterSqlite3.Database, query: string, boundVal
 /**
  * Create a D1Database-compatible wrapper around a better-sqlite3 instance.
  */
-export function createD1Shim(sqlite: BetterSqlite3.Database): D1Database {
+export function createD1Shim(sqlite: BetterSqlite3Database): D1Database {
   // Enable WAL mode for better concurrent read performance
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');

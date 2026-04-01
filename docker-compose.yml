@@ -1,0 +1,60 @@
+# =============================================================================
+# LINE Harness — Docker Compose (Single VPS)
+# =============================================================================
+#
+# Usage:
+#   cp .env.docker.example .env
+#   # Edit .env with your LINE credentials
+#   docker compose up -d
+#
+# Data is persisted in Docker volumes:
+#   - harness-db:     SQLite database
+#   - harness-images: Uploaded images
+#
+# =============================================================================
+
+services:
+  # --------------------------------------------------------------------------
+  # API Server (Hono on Node.js) — handles webhooks, API, cron, LIFF
+  # --------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${WORKER_URL:-http://localhost:8787}
+    container_name: line-harness-worker
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8787}:8787"
+    environment:
+      # --- Required ---
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN}
+      API_KEY: ${API_KEY}
+      # --- Server ---
+      PORT: "8787"
+      DB_PATH: /app/data/line-harness.db
+      STORAGE_PATH: /app/data/images
+      WORKER_URL: ${WORKER_URL:-http://localhost:8787}
+      # --- Optional ---
+      LIFF_URL: ${LIFF_URL:-}
+      LINE_CHANNEL_ID: ${LINE_CHANNEL_ID:-}
+      LINE_LOGIN_CHANNEL_ID: ${LINE_LOGIN_CHANNEL_ID:-}
+      LINE_LOGIN_CHANNEL_SECRET: ${LINE_LOGIN_CHANNEL_SECRET:-}
+      X_HARNESS_URL: ${X_HARNESS_URL:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      # --- Cron ---
+      CRON_SCHEDULE: ${CRON_SCHEDULE:-*/5 * * * *}
+    volumes:
+      - harness-db:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8787/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  harness-db:
+    driver: local

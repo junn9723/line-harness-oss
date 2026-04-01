@@ -8,12 +8,14 @@ export async function authMiddleware(c: Context<Env>, next: Next): Promise<Respo
   const path = new URL(c.req.url).pathname;
   if (
     path === '/webhook' ||
+    path === '/health' ||
     path === '/docs' ||
     path === '/openapi.json' ||
     path === '/api/affiliates/click' ||
     path.startsWith('/t/') ||
     path.startsWith('/r/') ||
     path.startsWith('/images/') ||
+    path.startsWith('/admin') ||
     path.startsWith('/api/liff/') ||
     path.startsWith('/auth/') ||
     path === '/api/integrations/stripe/webhook' ||
